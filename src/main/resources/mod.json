@@ -1,0 +1,20 @@
+{
+  "main":"io.tiler.collectors.loggly.LogglyCollectorVerticle",
+
+  "description":"Loggly collector for the Tiler dashboard framework",
+  "licenses": ["MIT"],
+  "author": "Simon Dean",
+
+  "developers": [],
+  "keywords": [
+    "dashboard",
+    "information",
+    "radiator",
+    "react",
+    "vert.x",
+    "loggly"
+  ],
+  "homepage": "https://github.com/tiler-project/tiler-collector-loggly",
+
+  "auto-redeploy": true
+}
