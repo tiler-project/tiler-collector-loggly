@@ -1,11 +1,11 @@
 package io.tiler.collectors.loggly.config;
 
+import com.google.code.regexp.Pattern;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 public class ConfigFactory {
   private static final long ONE_HOUR_IN_MILLISECONDS = 60 * 60 * 1000l;
@@ -124,24 +124,38 @@ public class ConfigFactory {
 
   private Field getField(Object fieldObject) {
     if (fieldObject instanceof String) {
-      return new Field((String) fieldObject, null);
+      return new Field((String) fieldObject, null, null, null);
     }
     
     JsonObject field = (JsonObject) fieldObject;
     return new Field(
       getFieldName(field),
-      getFieldExpansionPattern(field));
+      getFieldExpansionRegex(field),
+      getFieldReplacementRegex(field),
+      getFieldReplacement(field));
   }
 
   private String getFieldName(JsonObject field) {
     return field.getString("name");
   }
 
-  private Pattern getFieldExpansionPattern(JsonObject field) {
-    if (!field.containsField("expansionPattern")) {
+  private Pattern getFieldExpansionRegex(JsonObject field) {
+    return compileRegex(field.getObject("expansionRegex"));
+  }
+
+  private Pattern getFieldReplacementRegex(JsonObject field) {
+    return compileRegex(field.getObject("replacementRegex"));
+  }
+
+  private String getFieldReplacement(JsonObject field) {
+    return field.getString("replacement");
+  }
+
+  private Pattern compileRegex(JsonObject value) {
+    if (value == null) {
       return null;
     }
 
-    return Pattern.compile(field.getString("expansionPattern"));
+    return Pattern.compile(value.getString("pattern"));
   }
 }

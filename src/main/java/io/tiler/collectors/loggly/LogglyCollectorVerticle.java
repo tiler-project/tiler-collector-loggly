@@ -1,5 +1,6 @@
 package io.tiler.collectors.loggly;
 
+import com.google.code.regexp.Matcher;
 import io.tiler.collectors.loggly.config.*;
 import org.vertx.java.core.Handler;
 import org.vertx.java.core.eventbus.EventBus;
@@ -35,7 +36,7 @@ public class LogglyCollectorVerticle extends Verticle {
       isRunning[0] = false;
     });
 
-    vertx.setPeriodic(3600000, aLong -> {
+    vertx.setPeriodic(config.collectionIntervalInMilliseconds(), aLong -> {
       if (isRunning[0]) {
         logger.info("Collection aborted as previous run still executing");
         return;
@@ -89,7 +90,7 @@ public class LogglyCollectorVerticle extends Verticle {
 
       serverConfig.metrics().forEach(metricConfig -> {
         metrics.add(new JsonObject()
-          .putString("name", metricConfig.name())
+          .putString("name", config.metricNamePrefix() + metricConfig.name())
           .putArray("points", new JsonArray()
             .addObject(new JsonObject())));
       });
@@ -99,10 +100,10 @@ public class LogglyCollectorVerticle extends Verticle {
         .putArray("metrics", metrics));
     });
 
-    getMetrics(0, 0, 0, 0, servers, handler);
+    getMetrics(0, 0, 0, 0, servers, new JsonArray(), handler);
   }
 
-  private void getMetrics(int serverIndex, int metricIndex, int fieldIndex, int pointIndex, JsonArray servers, Handler<JsonArray> handler) {
+  private void getMetrics(int serverIndex, int metricIndex, int fieldIndex, int pointIndex, JsonArray servers, JsonArray newPoints, Handler<JsonArray> handler) {
     if (serverIndex >= config.servers().size()) {
       handler.handle(servers);
       return;
@@ -111,14 +112,14 @@ public class LogglyCollectorVerticle extends Verticle {
     Server serverConfig = config.servers().get(serverIndex);
 
     if (metricIndex >= serverConfig.metrics().size()) {
-      getMetrics(serverIndex + 1, 0, 0, 0, servers, handler);
+      getMetrics(serverIndex + 1, 0, 0, 0, servers, newPoints, handler);
       return;
     }
 
     Metric metricConfig = serverConfig.metrics().get(metricIndex);
 
     if (fieldIndex >= metricConfig.fields().size()) {
-      getMetrics(serverIndex, metricIndex + 1, 0, 0, servers, handler);
+      getMetrics(serverIndex, metricIndex + 1, 0, 0, servers, newPoints, handler);
       return;
     }
 
@@ -127,14 +128,10 @@ public class LogglyCollectorVerticle extends Verticle {
     JsonArray points = metric.getArray("points");
 
     if (pointIndex >= points.size()) {
-      metric.putArray("points", metric.getArray("newPoints"));
-      metric.removeField("newPoints");
+      metric.putArray("points", newPoints);
 
-      getMetrics(serverIndex, metricIndex, fieldIndex + 1, 0, servers, handler);
+      getMetrics(serverIndex, metricIndex, fieldIndex + 1, 0, servers, new JsonArray(), handler);
       return;
-    }
-    else if (!metric.containsField("newPoints")) {
-      metric.putArray("newPoints", new JsonArray());
     }
 
     Field fieldConfig = metricConfig.fields().get(fieldIndex);
@@ -153,11 +150,13 @@ public class LogglyCollectorVerticle extends Verticle {
       String separator = "";
 
       for (String fieldName : point.getFieldNames()) {
-        requestUri.append(urlEncode(separator))
-          .append(urlEncode(fieldName))
-          .append(":")
-          .append(urlEncode(point.getField(fieldName).toString()));
-        separator = " ";
+        if (!fieldName.equals("count")) {
+          requestUri.append(urlEncode(separator))
+            .append(urlEncode(fieldName))
+            .append(":")
+            .append(urlEncode(point.getField(fieldName).toString()));
+          separator = " ";
+        }
       }
     }
 
@@ -167,19 +166,43 @@ public class LogglyCollectorVerticle extends Verticle {
         String bodyString = body.toString();
         JsonObject bodyJson = new JsonObject(bodyString);
 
-        final JsonArray newPoints = metric.getArray("newPoints");
-
         JsonArray items = bodyJson.getArray(fieldName);
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
 
+        HashMap<Object, JsonObject> fieldNewPoints = new HashMap<>();
+
         items.forEach(itemObject -> {
           JsonObject item = (JsonObject) itemObject;
-          JsonObject newPoint = point.copy()
-            .putString(fieldName, item.getField("term"));
-          newPoints.addObject(newPoint);
+          Object term = item.getField("term");
+          long count = item.getLong("count");
+
+          if (fieldConfig.hasReplacement() && (term instanceof String)) {
+            Matcher matcher = fieldConfig.replacementRegex().matcher((String) term);
+
+            if (matcher.matches()) {
+              term = matcher.replaceAll(fieldConfig.replacement());
+            }
+          }
+
+          JsonObject newPoint = fieldNewPoints.get(term);
+
+          if (newPoint != null) {
+            count += newPoint.getLong("count");
+            newPoint.putNumber("count", count);
+          }
+          else {
+            newPoint = point.copy()
+              .putValue(fieldName, term)
+              .putNumber("count", count);
+            fieldNewPoints.put(term, newPoint);
+          }
         });
 
-        getMetrics(serverIndex, metricIndex, fieldIndex, pointIndex + 1, servers, handler);
+        logger.info("Left with " + fieldNewPoints.size() + " terms for field '" + fieldName + "' after replacement");
+
+        fieldNewPoints.values().forEach(newPoints::addObject);
+
+        getMetrics(serverIndex, metricIndex, fieldIndex, pointIndex + 1, servers, newPoints, handler);
       });
     });
 
@@ -216,11 +239,11 @@ public class LogglyCollectorVerticle extends Verticle {
         JsonObject metric = server.getArray("metrics").get(metricIndex);
         Metric metricConfig = serverConfig.metrics().get(metricIndex);
 
-        Map<String, Field> fieldConfigsWithExpansionPatterns = new HashMap<>();
+        ArrayList<Field> fieldConfigsWithExpansionRegexs = new ArrayList<>();
 
         metricConfig.fields().forEach(fieldConfig -> {
-          if (fieldConfig.hasExpansionPattern()) {
-            fieldConfigsWithExpansionPatterns.put(fieldConfig.name(), fieldConfig);
+          if (fieldConfig.hasExpansion()) {
+            fieldConfigsWithExpansionRegexs.add(fieldConfig);
           }
         });
 
@@ -231,8 +254,16 @@ public class LogglyCollectorVerticle extends Verticle {
           point.putNumber("time", metricTimestamp)
             .putString("serverName", serverName);
 
-          fieldConfigsWithExpansionPatterns.entrySet().forEach(entry -> {
-            // TODO Implement code to extract groups
+          fieldConfigsWithExpansionRegexs.forEach(fieldConfig -> {
+            Object value = point.getString(fieldConfig.name());
+
+            if (value instanceof String) {
+              Matcher matcher = fieldConfig.expansionRegex().matcher((String) value);
+
+              if (matcher.matches()) {
+                matcher.namedGroups().entrySet().forEach(group -> point.putString(group.getKey(), group.getValue()));
+              }
+            }
           });
         });
 

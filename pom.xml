@@ -53,6 +53,7 @@
     <vertx.version>2.1.5</vertx.version>
     <vertx.testtools.version>2.0.3-final</vertx.testtools.version>
     <junit.version>4.11</junit.version>
+    <named-regexp.version>0.2.3</named-regexp.version>
 
     <!--Plugin versions-->
     <maven.compiler.plugin.version>3.0</maven.compiler.plugin.version>
@@ -101,6 +102,11 @@
       <scope>test</scope>
     </dependency>
     <!--Dependencies packaged into the module (in the lib dir), using "compile" scope-->
+    <dependency>
+      <groupId>com.github.tony19</groupId>
+      <artifactId>named-regexp</artifactId>
+      <version>${named-regexp.version}</version>
+    </dependency>
   </dependencies>
 
   <distributionManagement>
