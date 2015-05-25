@@ -16,5 +16,6 @@
   ],
   "homepage": "https://github.com/tiler-project/tiler-collector-loggly",
 
-  "auto-redeploy": true
+  "auto-redeploy": true,
+  "includes": "io.tiler~tiler~0.1.6-SNAPSHOT,org.simondean.vertx~vertx-async~0.1.1"
 }

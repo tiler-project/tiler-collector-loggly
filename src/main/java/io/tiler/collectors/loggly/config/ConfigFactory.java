@@ -1,6 +1,7 @@
 package io.tiler.collectors.loggly.config;
 
 import com.google.code.regexp.Pattern;
+import io.tiler.time.TimePeriodParser;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
@@ -8,8 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ConfigFactory {
-  private static final long ONE_HOUR_IN_MILLISECONDS = 60 * 60 * 1000l;
-
   public Config load(JsonObject config) {
     return new Config(
       getCollectionIntervalInMilliseconds(config),
@@ -18,7 +17,7 @@ public class ConfigFactory {
   }
 
   private long getCollectionIntervalInMilliseconds(JsonObject config) {
-    return config.getLong("collectionIntervalInMilliseconds", ONE_HOUR_IN_MILLISECONDS);
+    return TimePeriodParser.parseTimePeriodToMilliseconds(config.getString("collectionIntervalInMilliseconds", "1h"));
   }
 
   private List<Server> getServers(JsonObject config) {
@@ -100,11 +99,26 @@ public class ConfigFactory {
   private Metric getMetric(JsonObject metric) {
     return new Metric(
       getMetricName(metric),
+      getMetricInterval(metric),
+      getMetricRetentionPeriod(metric),
+      getMetricMaxCatchUpPeriod(metric),
       getMetricFields(metric));
   }
-  
+
   private String getMetricName(JsonObject metric) {
     return metric.getString("name");
+  }
+
+  private String getMetricInterval(JsonObject metric) {
+    return metric.getString("interval", "1h");
+  }
+
+  private String getMetricRetentionPeriod(JsonObject metric) {
+    return metric.getString("retentionPeriod", "1d");
+  }
+
+  private String getMetricMaxCatchUpPeriod(JsonObject metric) {
+    return metric.getString("maxCatchUpPeriod", "1d");
   }
 
   private List<Field> getMetricFields(JsonObject metric) {
@@ -115,9 +129,7 @@ public class ConfigFactory {
       return loadedFields;
     }
 
-    fields.forEach(fieldObject -> {
-      loadedFields.add(getField(fieldObject));
-    });
+    fields.forEach(fieldObject -> loadedFields.add(getField(fieldObject)));
 
     return loadedFields;
   }

@@ -53,6 +53,8 @@
     <vertx.version>2.1.5</vertx.version>
     <vertx.testtools.version>2.0.3-final</vertx.testtools.version>
     <junit.version>4.11</junit.version>
+    <tiler.version>0.1.6-SNAPSHOT</tiler.version>
+    <vertx-async.version>0.1.1</vertx-async.version>
     <named-regexp.version>0.2.3</named-regexp.version>
 
     <!--Plugin versions-->
@@ -102,6 +104,18 @@
       <scope>test</scope>
     </dependency>
     <!--Dependencies packaged into the module (in the lib dir), using "compile" scope-->
+    <dependency>
+      <groupId>io.tiler</groupId>
+      <artifactId>tiler</artifactId>
+      <version>${tiler.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.simondean.vertx</groupId>
+      <artifactId>vertx-async</artifactId>
+      <version>${vertx-async.version}</version>
+      <scope>provided</scope>
+    </dependency>
     <dependency>
       <groupId>com.github.tony19</groupId>
       <artifactId>named-regexp</artifactId>
