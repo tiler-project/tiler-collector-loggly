@@ -128,19 +128,15 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
     config.servers().forEach(serverConfig -> {
       serverConfig.metrics().forEach(metricConfig -> {
-        metricNames.add(getMetricName(metricConfig));
+        metricNames.add(config.getFullMetricName(metricConfig));
       });
     });
 
     return metricNames;
   }
 
-  private String getMetricName(Metric metricConfig) {
-    return config.metricNamePrefix() + metricConfig.name();
-  }
-
   private void getMetrics(JsonArray existingMetrics, AsyncResultHandler<JsonArray> handler) {
-    getMetrics(new MetricCollectionState(existingMetrics), handler);
+    getMetrics(new MetricCollectionState(logger, config, currentTimeInMicroseconds(), existingMetrics), handler);
   }
 
   private void getMetrics(MetricCollectionState state, AsyncResultHandler<JsonArray> handler) {
@@ -175,7 +171,8 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       }
     }
 
-    HttpClientRequest request = state.httpClient().get(requestUri.toString(), response -> {
+    HttpClient httpClient = httpClients.get(state.serverIndex());
+    HttpClientRequest request = httpClient.get(requestUri.toString(), response -> {
       response.bodyHandler(body -> {
         Field fieldConfig = state.fieldConfig();
         String fieldName = fieldConfig.name();
@@ -291,218 +288,4 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     handler.handle(newMetrics);
   }
 
-  private class MetricCollectionState {
-    private boolean initialised = false;
-    private final long currentTimeInMicroseconds;
-    private int totalFieldCount;
-    private final JsonArray existingMetrics;
-    private final List<Server> serverConfigs;
-    private List<Metric> metricConfigs;
-    private List<Field> fieldConfigs;
-    private Server serverConfig;
-    private Metric metricConfig;
-    private Field fieldConfig;
-    private JsonArray servers;
-    private JsonArray metrics;
-    private JsonObject metric;
-    private JsonArray currentPoints;
-    private JsonArray nextPoints;
-    private JsonObject point;
-    private int serverIndex;
-    private int metricIndex;
-    private int fieldIndex;
-    private int pointIndex;
-
-    public MetricCollectionState(JsonArray existingMetrics) {
-      currentTimeInMicroseconds = currentTimeInMicroseconds();
-      this.existingMetrics = existingMetrics;
-      totalFieldCount = 0;
-      serverConfigs = config.servers();
-      servers = new JsonArray();
-    }
-
-    public int totalFieldCount() {
-      return totalFieldCount;
-    }
-
-    public Server serverConfig() {
-      return serverConfig;
-    }
-
-    public Field fieldConfig() {
-      return fieldConfig;
-    }
-
-    public JsonArray servers() {
-      return servers;
-    }
-
-    public JsonObject metric() {
-      return metric;
-    }
-
-    public JsonObject point() {
-      return point;
-    }
-
-    public boolean nextPoint() {
-      if (!initialised) {
-        if (!nextField()) {
-          return false;
-        }
-      }
-      else {
-        pointIndex++;
-      }
-
-      while (pointIndex >= currentPoints.size()) {
-        if (!nextField()) {
-          return false;
-        }
-      }
-
-      logger.info("Point " + pointIndex + " of " + currentPoints.size());
-
-      point = currentPoints.get(pointIndex);
-      totalFieldCount += 1;
-      return true;
-    }
-
-    private boolean nextField() {
-      if (!initialised) {
-        if (!nextMetric()) {
-          return false;
-        }
-      }
-      else {
-        fieldIndex++;
-
-        if (fieldIndex >= fieldConfigs.size()) {
-          JsonArray points = metric.getArray("points");
-
-          nextPoints.forEach(pointObject -> {
-            JsonObject point = (JsonObject) pointObject;
-            points.addObject(point);
-          });
-        }
-      }
-
-      while (fieldIndex >= fieldConfigs.size()) {
-        if (!nextMetric()) {
-          return false;
-        }
-      }
-
-      logger.info("Field " + fieldIndex + " of " + fieldConfigs.size());
-
-      fieldConfig = fieldConfigs.get(fieldIndex);
-      currentPoints = nextPoints;
-      nextPoints = new JsonArray();
-
-      pointIndex = 0;
-      return true;
-    }
-
-    private boolean nextMetric() {
-      if (!initialised) {
-        if (!nextServer()) {
-          return false;
-        }
-      }
-      else {
-        metricIndex++;
-      }
-
-      while (metricIndex >= metricConfigs.size()) {
-        if (!nextServer()) {
-          return false;
-        }
-      }
-
-      logger.info("Metric " + metricIndex + " of " + metricConfigs.size());
-
-      metricConfig = metricConfigs.get(metricIndex);
-      fieldConfigs = metricConfig.fields();
-
-      String metricName = getMetricName(metricConfig);
-      metric = findMetricByNameInJsonArray(metricName, existingMetrics);
-
-      if (metric != null) {
-        applyRetentionPeriodToPoints(currentTimeInMicroseconds, metricConfig, metric);
-      } else {
-        metric = new JsonObject()
-          .putString("name", metricName)
-          .putArray("points", new JsonArray());
-      }
-
-      metrics.add(metric);
-      nextPoints = new JsonArray();
-      JsonObject emptyPoint = new JsonObject();
-      nextPoints.addObject(emptyPoint);
-
-      fieldIndex = 0;
-      return true;
-    }
-
-    private boolean nextServer() {
-      if (!initialised) {
-        serverIndex = 0;
-        initialised = true;
-      }
-      else {
-        serverIndex++;
-      }
-
-      if (serverIndex >= serverConfigs.size()) {
-        return false;
-      }
-
-      logger.info("Server " + serverIndex + " of " + serverConfigs.size());
-
-      serverConfig = serverConfigs.get(serverIndex);
-      metricConfigs = serverConfig.metrics();
-      metrics = new JsonArray();
-      servers.add(new JsonObject()
-        .putString("name", serverConfig.name())
-        .putArray("metrics", metrics));
-      metricIndex = 0;
-      return true;
-    }
-
-    public HttpClient httpClient() {
-      return httpClients.get(serverIndex);
-    }
-
-    private void applyRetentionPeriodToPoints(long currentTimeInMicroseconds, Metric metricConfig, JsonObject metric) {
-      long startOfLatestPeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds, metricConfig.intervalInMicroseconds());
-      long retainFromTimeInMicroseconds = startOfLatestPeriodInMicroseconds - metricConfig.retentionPeriodInMicroseconds();
-      Iterator<JsonObject> pointIterator = new JsonArrayIterable<JsonObject>(metric.getArray("points")).iterator();
-
-      while (pointIterator.hasNext()) {
-        JsonObject point = pointIterator.next();
-
-        if (point.getLong("time") < retainFromTimeInMicroseconds) {
-          pointIterator.remove();
-        }
-      }
-    }
-
-    private long findStartOfPeriod(long timeInMicroseconds, long intervalInMicroseconds) {
-      return timeInMicroseconds / intervalInMicroseconds * intervalInMicroseconds;
-    }
-
-    private JsonObject findMetricByNameInJsonArray(String metricName, JsonArray metrics) {
-      for (JsonObject metric : new JsonArrayIterable<JsonObject>(metrics)) {
-        if (metricName.equals(metric.getString("name"))) {
-          return metric;
-        }
-      }
-
-      return null;
-    }
-
-    public void addPoint(JsonObject point) {
-      nextPoints.addObject(point);
-    }
-  }
 }

@@ -24,4 +24,8 @@ public class Config {
   public String metricNamePrefix() {
     return metricNamePrefix;
   }
+
+  public String getFullMetricName(Metric metric) {
+    return metricNamePrefix() + metric.name();
+  }
 }
