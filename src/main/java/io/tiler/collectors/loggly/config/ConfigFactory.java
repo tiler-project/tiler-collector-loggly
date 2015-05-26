@@ -102,6 +102,7 @@ public class ConfigFactory {
       getMetricInterval(metric),
       getMetricRetentionPeriod(metric),
       getMetricMaxCatchUpPeriod(metric),
+      getMetricStabilityPeriod(metric),
       getMetricFields(metric));
   }
 
@@ -119,6 +120,10 @@ public class ConfigFactory {
 
   private String getMetricMaxCatchUpPeriod(JsonObject metric) {
     return metric.getString("maxCatchUpPeriod", "1d");
+  }
+
+  private String getMetricStabilityPeriod(JsonObject metric) {
+    return metric.getString("stabilityPeriod", "1h");
   }
 
   private List<Field> getMetricFields(JsonObject metric) {

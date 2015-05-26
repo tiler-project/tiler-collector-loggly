@@ -4,6 +4,8 @@ import com.google.code.regexp.Matcher;
 import io.tiler.BaseCollectorVerticle;
 import io.tiler.collectors.loggly.config.*;
 import io.tiler.json.JsonArrayIterable;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.ISODateTimeFormat;
 import org.simondean.vertx.async.DefaultAsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
 import org.vertx.java.core.Handler;
@@ -12,6 +14,7 @@ import org.vertx.java.core.http.HttpClientRequest;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.logging.Logger;
+import sun.util.resources.cldr.en.TimeZoneNames_en_IN;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -113,7 +116,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
         while (pointIterator.hasNext()) {
           JsonObject point = pointIterator.next();
 
-          if (point.getBoolean("complete") == false) {
+          if (point.getBoolean("stable") == false) {
             pointIterator.remove();
           }
         }
@@ -146,23 +149,26 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       return;
     }
 
+    String from = formatTimeInMicrosecondsAsISODateTime(state.startOfTimePeriodInMicroseconds());
+    String until = formatTimeInMicrosecondsAsISODateTime(state.endOfTimePeriodInMicroseconds());
+
     Server serverConfig = state.serverConfig();
-    StringBuilder requestUri = new StringBuilder()
+    StringBuilder requestUriBuilder = new StringBuilder()
       .append(serverConfig.path())
       .append("/apiv2/fields/")
       .append(urlEncode(state.fieldConfig().name()))
-      .append("/?from=-1d&until=now&facet_size=2000");
+      .append("/?from=" + urlEncode(from) + "&until=" + urlEncode(until) + "&facet_size=2000");
 
     JsonObject point = state.point();
 
     if (point.size() > 0) {
-      requestUri.append("&q=");
+      requestUriBuilder.append("&q=");
 
       String separator = "";
 
       for (String fieldName : point.getFieldNames()) {
-        if (!fieldName.equals("count")) {
-          requestUri.append(urlEncode(separator))
+        if (!fieldName.equals("count") && !fieldName.equals("stable")) {
+          requestUriBuilder.append(urlEncode(separator))
             .append(urlEncode(fieldName))
             .append(":")
             .append(urlEncode(point.getField(fieldName).toString()));
@@ -171,8 +177,10 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       }
     }
 
-    HttpClient httpClient = httpClients.get(state.serverIndex());
-    HttpClientRequest request = httpClient.get(requestUri.toString(), response -> {
+    String requestUri = requestUriBuilder.toString();
+    logger.info("Request URI: '" + requestUri + "'");
+
+    HttpClientRequest request = httpClients.get(state.serverIndex()).get(requestUri, response -> {
       response.bodyHandler(body -> {
         Field fieldConfig = state.fieldConfig();
         String fieldName = fieldConfig.name();
@@ -183,6 +191,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
 
         HashMap<Object, JsonObject> fieldNewPoints = new HashMap<>();
+        boolean timePeriodIsStable = state.timePeriodIsStable();
 
         items.forEach(itemObject -> {
           JsonObject item = (JsonObject) itemObject;
@@ -205,6 +214,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           } else {
             newPoint = point.copy()
               .putValue(fieldName, term)
+              .putBoolean("stable", timePeriodIsStable)
               .putNumber("count", count);
             fieldNewPoints.put(term, newPoint);
           }
@@ -222,6 +232,11 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     request.setTimeout(TWO_MINUTES_IN_MILLISECONDS);
     request.exceptionHandler(cause -> handler.handle(DefaultAsyncResult.fail(cause)));
     request.end();
+  }
+
+  private String formatTimeInMicrosecondsAsISODateTime(long timeInMicroseconds) {
+    DateTimeFormatter formatter = ISODateTimeFormat.dateTime();
+    return formatter.print(timeInMicroseconds / 1000);
   }
 
   private void setBasicAuthOnRequest(String username, String password, HttpClientRequest request) {

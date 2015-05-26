@@ -5,7 +5,6 @@ import io.tiler.collectors.loggly.config.Field;
 import io.tiler.collectors.loggly.config.Metric;
 import io.tiler.collectors.loggly.config.Server;
 import io.tiler.json.JsonArrayIterable;
-import org.vertx.java.core.http.HttpClient;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.logging.Logger;
@@ -36,6 +35,13 @@ public class MetricCollectionState {
   private int metricIndex;
   private int fieldIndex;
   private int pointIndex;
+  private long startOfFirstTimePeriodInMicroseconds;
+  private long startOfLatestTimePeriodInMicroseconds;
+  private long startOfTimePeriodInMicroseconds;
+  private int timePeriodIndex;
+  private int timePeriodCount;
+  private long startOfLastStableTimePeriodInMilliseconds;
+  private boolean timePeriodIsStable;
 
   public MetricCollectionState(Logger logger, Config config, long currentTimeInMicroseconds, JsonArray existingMetrics) {
     this.logger = logger;
@@ -111,25 +117,21 @@ public class MetricCollectionState {
   }
 
   private void endOfPointVisit() {
-
   }
 
   private boolean nextField() {
     if (!initialised) {
-      if (!nextMetric()) {
+      if (!nextTimePeriod()) {
         return false;
       }
     }
     else {
+      endOfFieldVisit();
       fieldIndex++;
-
-      if (noMoreFields()) {
-        endOfFieldVisit();
-      }
     }
 
     while (noMoreFields()) {
-      if (!nextMetric()) {
+      if (!nextTimePeriod()) {
         return false;
       }
     }
@@ -151,6 +153,46 @@ public class MetricCollectionState {
   }
 
   private void endOfFieldVisit() {
+  }
+
+  private boolean nextTimePeriod() {
+    if (!initialised) {
+      if (!nextMetric()) {
+        return false;
+      }
+    }
+    else {
+      endOfTimePeriodVisit();
+      timePeriodIndex++;
+      startOfTimePeriodInMicroseconds += metricConfig.intervalInMicroseconds();
+    }
+
+    while (noMoreTimePeriods()) {
+      if (!nextMetric()) {
+        return false;
+      }
+    }
+
+    startOfTimePeriodVisit();
+    return true;
+  }
+
+  private boolean noMoreTimePeriods() {
+    return timePeriodIndex >= timePeriodCount;
+  }
+
+  private void startOfTimePeriodVisit() {
+    logger.info("Time period " + timePeriodIndex + " of " + timePeriodCount);
+    nextPoints = new JsonArray();
+    JsonObject emptyPoint = new JsonObject();
+    nextPoints.addObject(emptyPoint);
+
+    timePeriodIsStable = startOfTimePeriodInMicroseconds <= startOfLastStableTimePeriodInMilliseconds;
+
+    fieldIndex = 0;
+  }
+
+  private void endOfTimePeriodVisit() {
     JsonArray points = metric.getArray("points");
 
     nextPoints.forEach(pointObject -> {
@@ -166,11 +208,8 @@ public class MetricCollectionState {
       }
     }
     else {
+      endOfMetricVisit();
       metricIndex++;
-
-      if (noMoreFields()) {
-        endOfMetricVisit();
-      }
     }
 
     while (noMoreMetrics()) {
@@ -193,25 +232,29 @@ public class MetricCollectionState {
     logger.info("Metric " + metricIndex + " of " + metricConfigs.size());
     String metricName = config.getFullMetricName(metricConfig);
     metric = findMetricByNameInJsonArray(metricName, existingMetrics);
+    startOfLatestTimePeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds);
 
     if (metric != null) {
       applyRetentionPeriodToPoints(currentTimeInMicroseconds, metricConfig, metric);
+      startOfFirstTimePeriodInMicroseconds = findStartOfPeriod(metric.getLong("startOfLastStableTimePeriod"));
     } else {
       metric = new JsonObject()
         .putString("name", metricName)
         .putArray("points", new JsonArray());
+      startOfFirstTimePeriodInMicroseconds = startOfLatestTimePeriodInMicroseconds - metricConfig.maxCatchUpPeriodInMicroseconds();
     }
 
-    metrics.add(metric);
-    nextPoints = new JsonArray();
-    JsonObject emptyPoint = new JsonObject();
-    nextPoints.addObject(emptyPoint);
+    timePeriodIndex = 0;
+    timePeriodCount = (int) (((startOfLatestTimePeriodInMicroseconds - startOfFirstTimePeriodInMicroseconds) / metricConfig.intervalInMicroseconds()) + 1);
+    startOfLastStableTimePeriodInMilliseconds = startOfLatestTimePeriodInMicroseconds - metricConfig.stabilityPeriodInMilliseconds() - metricConfig.intervalInMicroseconds();
+    metric.putNumber("startOfLastStableTimePeriod", startOfLastStableTimePeriodInMilliseconds);
 
-    fieldIndex = 0;
+    metrics.add(metric);
+    startOfTimePeriodInMicroseconds = startOfFirstTimePeriodInMicroseconds;
   }
 
   private void endOfMetricVisit() {
-
+    logger.info("Metric has " + metric.getArray("points").size() + "points");
   }
 
   private boolean nextServer() {
@@ -220,18 +263,14 @@ public class MetricCollectionState {
       initialised = true;
     }
     else {
-      serverIndex++;
+      endOfServerVisit();
 
-      if (noMoreServers()) {
-        endOfServerVisit();
-      }
+      serverIndex++;
     }
 
     if (noMoreServers()) {
       return false;
     }
-
-    logger.info("Server " + serverIndex + " of " + serverConfigs.size());
 
     serverConfig = serverConfigs.get(serverIndex);
     metricConfigs = serverConfig.metrics();
@@ -244,6 +283,7 @@ public class MetricCollectionState {
   }
 
   private void startOfServerVisit() {
+    logger.info("Server " + serverIndex + " of " + serverConfigs.size());
     metrics = new JsonArray();
     servers.add(new JsonObject()
       .putString("name", serverConfig.name())
@@ -252,11 +292,9 @@ public class MetricCollectionState {
   }
 
   private void endOfServerVisit() {
-
   }
 
-  private void applyRetentionPeriodToPoints(long currentTimeInMicroseconds, Metric metricConfig, JsonObject metric) {
-    long startOfLatestPeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds, metricConfig.intervalInMicroseconds());
+  private void applyRetentionPeriodToPoints(long startOfLatestPeriodInMicroseconds, Metric metricConfig, JsonObject metric) {
     long retainFromTimeInMicroseconds = startOfLatestPeriodInMicroseconds - metricConfig.retentionPeriodInMicroseconds();
     Iterator<JsonObject> pointIterator = new JsonArrayIterable<JsonObject>(metric.getArray("points")).iterator();
 
@@ -269,7 +307,8 @@ public class MetricCollectionState {
     }
   }
 
-  private long findStartOfPeriod(long timeInMicroseconds, long intervalInMicroseconds) {
+  private long findStartOfPeriod(long timeInMicroseconds) {
+    long intervalInMicroseconds = metricConfig.intervalInMicroseconds();
     return timeInMicroseconds / intervalInMicroseconds * intervalInMicroseconds;
   }
 
@@ -285,5 +324,17 @@ public class MetricCollectionState {
 
   public void addPoint(JsonObject point) {
     nextPoints.addObject(point);
+  }
+
+  public long startOfTimePeriodInMicroseconds() {
+    return startOfTimePeriodInMicroseconds;
+  }
+
+  public long endOfTimePeriodInMicroseconds() {
+    return startOfTimePeriodInMicroseconds + metricConfig.intervalInMicroseconds();
+  }
+
+  public boolean timePeriodIsStable() {
+    return timePeriodIsStable;
   }
 }
