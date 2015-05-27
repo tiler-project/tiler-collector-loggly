@@ -6,7 +6,7 @@
   <groupId>io.tiler</groupId>
   <artifactId>tiler-collector-loggly</artifactId>
   <packaging>jar</packaging>
-  <version>0.1.1-SNAPSHOT</version>
+  <version>0.1.1</version>
   <name>tiler-collector-loggly</name>
   <description>Loggly collector for the Tiler dashboard framework</description>
   <url>https://github.com/tiler-project/tiler-collector-loggly</url>
