@@ -254,7 +254,7 @@ public class MetricCollectionState {
   }
 
   private void endOfMetricVisit() {
-    logger.info("Metric has " + metric.getArray("points").size() + "points");
+    logger.info("Metric has " + metric.getArray("points").size() + " points");
   }
 
   private boolean nextServer() {
@@ -336,5 +336,9 @@ public class MetricCollectionState {
 
   public boolean timePeriodIsStable() {
     return timePeriodIsStable;
+  }
+
+  public boolean isLastField() {
+    return (fieldIndex + 1) == fieldConfigs.size();
   }
 }

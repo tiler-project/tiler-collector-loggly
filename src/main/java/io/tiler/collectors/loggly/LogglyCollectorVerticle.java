@@ -4,6 +4,8 @@ import com.google.code.regexp.Matcher;
 import io.tiler.BaseCollectorVerticle;
 import io.tiler.collectors.loggly.config.*;
 import io.tiler.json.JsonArrayIterable;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 import org.simondean.vertx.async.DefaultAsyncResult;
@@ -14,7 +16,6 @@ import org.vertx.java.core.http.HttpClientRequest;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.logging.Logger;
-import sun.util.resources.cldr.en.TimeZoneNames_en_IN;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -26,13 +27,13 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
   private Logger logger;
   private Config config;
   private List<HttpClient> httpClients;
-  private Base64.Encoder base64Encoder;
+  private Base64.Encoder base64Encoder = Base64.getEncoder();
+  private DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime().withZoneUTC();
 
   public void start() {
     logger = container.logger();
     config = new ConfigFactory().load(container.config());
     httpClients = createHttpClients();
-    base64Encoder = Base64.getEncoder();
 
     final boolean[] isRunning = {true};
 
@@ -167,7 +168,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       String separator = "";
 
       for (String fieldName : point.getFieldNames()) {
-        if (!fieldName.equals("count") && !fieldName.equals("stable")) {
+        if (!fieldName.equals("count")) {
           requestUriBuilder.append(urlEncode(separator))
             .append(urlEncode(fieldName))
             .append(":")
@@ -214,7 +215,6 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           } else {
             newPoint = point.copy()
               .putValue(fieldName, term)
-              .putBoolean("stable", timePeriodIsStable)
               .putNumber("count", count);
             fieldNewPoints.put(term, newPoint);
           }
@@ -222,7 +222,14 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         logger.info("Left with " + fieldNewPoints.size() + " terms for field '" + fieldName + "' after replacement");
 
-        fieldNewPoints.values().forEach(state::addPoint);
+        fieldNewPoints.values().forEach(newPoint -> {
+          if (state.isLastField()) {
+            newPoint.putBoolean("stable", timePeriodIsStable)
+              .putNumber("time", state.startOfTimePeriodInMicroseconds());
+          }
+
+          state.addPoint(newPoint);
+        });
 
         getMetrics(state, handler);
       });
@@ -235,8 +242,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
   }
 
   private String formatTimeInMicrosecondsAsISODateTime(long timeInMicroseconds) {
-    DateTimeFormatter formatter = ISODateTimeFormat.dateTime();
-    return formatter.print(timeInMicroseconds / 1000);
+    return dateTimeFormatter.print(new DateTime(timeInMicroseconds / 1000, DateTimeZone.UTC));
   }
 
   private void setBasicAuthOnRequest(String username, String password, HttpClientRequest request) {
@@ -280,8 +286,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         metric.getArray("points").forEach(pointObject -> {
           JsonObject point = (JsonObject) pointObject;
-          point.putNumber("time", metricTimestamp)
-            .putString("serverName", serverName);
+          point.putString("serverName", serverName);
 
           fieldConfigsWithExpansionRegexs.forEach(fieldConfig -> {
             Object value = point.getString(fieldConfig.name());
@@ -302,5 +307,4 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
     handler.handle(newMetrics);
   }
-
 }
