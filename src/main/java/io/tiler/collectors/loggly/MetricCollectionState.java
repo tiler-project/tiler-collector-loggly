@@ -35,8 +35,6 @@ public class MetricCollectionState {
   private int metricIndex;
   private int fieldIndex;
   private int pointIndex;
-  private long startOfFirstTimePeriodInMicroseconds;
-  private long startOfLatestTimePeriodInMicroseconds;
   private long startOfTimePeriodInMicroseconds;
   private int timePeriodIndex;
   private int timePeriodCount;
@@ -232,7 +230,8 @@ public class MetricCollectionState {
     logger.info("Metric " + metricIndex + " of " + metricConfigs.size());
     String metricName = config.getFullMetricName(metricConfig);
     metric = findMetricByNameInJsonArray(metricName, existingMetrics);
-    startOfLatestTimePeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds);
+    long startOfLatestTimePeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds);
+    long startOfFirstTimePeriodInMicroseconds;
 
     if (metric != null) {
       applyRetentionPeriodToPoints(currentTimeInMicroseconds, metricConfig, metric);
