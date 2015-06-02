@@ -53,8 +53,9 @@
     <vertx.version>2.1.5</vertx.version>
     <vertx.testtools.version>2.0.3-final</vertx.testtools.version>
     <junit.version>4.11</junit.version>
-    <tiler.version>0.1.7</tiler.version>
-    <vertx-async.version>0.1.1</vertx-async.version>
+    <tiler-core.version>0.1.0</tiler-core.version>
+    <vertx-async.version>0.1.5</vertx-async.version>
+    <joda-time.version>2.7</joda-time.version>
     <named-regexp.version>0.2.3</named-regexp.version>
 
     <!--Plugin versions-->
@@ -90,6 +91,18 @@
       <scope>provided</scope>
     </dependency>
     <!--Dependencies provided by included Vert.x modules-->
+    <dependency>
+      <groupId>io.tiler</groupId>
+      <artifactId>tiler-core</artifactId>
+      <version>${tiler-core.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.simondean.vertx</groupId>
+      <artifactId>vertx-async</artifactId>
+      <version>${vertx-async.version}</version>
+      <scope>provided</scope>
+    </dependency>
     <!--Test dependencies-->
     <dependency>
       <groupId>junit</groupId>
@@ -105,16 +118,10 @@
     </dependency>
     <!--Dependencies packaged into the module (in the lib dir), using "compile" scope-->
     <dependency>
-      <groupId>io.tiler</groupId>
-      <artifactId>tiler</artifactId>
-      <version>${tiler.version}</version>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.simondean.vertx</groupId>
-      <artifactId>vertx-async</artifactId>
-      <version>${vertx-async.version}</version>
-      <scope>provided</scope>
+      <groupId>joda-time</groupId>
+      <artifactId>joda-time</artifactId>
+      <version>${joda-time.version}</version>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>com.github.tony19</groupId>

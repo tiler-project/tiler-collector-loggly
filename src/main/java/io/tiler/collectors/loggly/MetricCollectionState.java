@@ -4,7 +4,7 @@ import io.tiler.collectors.loggly.config.Config;
 import io.tiler.collectors.loggly.config.Field;
 import io.tiler.collectors.loggly.config.Metric;
 import io.tiler.collectors.loggly.config.Server;
-import io.tiler.json.JsonArrayIterable;
+import io.tiler.core.json.JsonArrayIterable;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.logging.Logger;

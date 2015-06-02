@@ -1,9 +1,9 @@
 package io.tiler.collectors.loggly;
 
 import com.google.code.regexp.Matcher;
-import io.tiler.BaseCollectorVerticle;
+import io.tiler.core.BaseCollectorVerticle;
 import io.tiler.collectors.loggly.config.*;
-import io.tiler.json.JsonArrayIterable;
+import io.tiler.core.json.JsonArrayIterable;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormatter;
@@ -41,9 +41,9 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       isRunning[0] = false;
     });
 
-    vertx.setPeriodic(config.collectionIntervalInMilliseconds(), aLong -> {
+    vertx.setPeriodic(config.collectionIntervalInMilliseconds(), timerID -> {
       if (isRunning[0]) {
-        logger.info("Collection aborted as previous run still executing");
+        logger.warn("Collection aborted as previous run still executing");
         return;
       }
 

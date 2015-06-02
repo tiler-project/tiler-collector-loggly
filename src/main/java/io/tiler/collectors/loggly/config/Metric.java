@@ -1,6 +1,6 @@
 package io.tiler.collectors.loggly.config;
 
-import io.tiler.time.TimePeriodParser;
+import io.tiler.core.time.TimePeriodParser;
 
 import java.util.List;
 

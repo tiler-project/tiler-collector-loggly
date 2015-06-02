@@ -1,7 +1,7 @@
 package io.tiler.collectors.loggly.config;
 
 import com.google.code.regexp.Pattern;
-import io.tiler.time.TimePeriodParser;
+import io.tiler.core.time.TimePeriodParser;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
@@ -66,10 +66,6 @@ public class ConfigFactory {
 
   private String getServerHost(JsonObject server) {
     return server.getString("host", "localhost");
-  }
-
-  private String getMetricNamePrefix(JsonObject config) {
-    return config.getString("metricNamePrefix", "loggly");
   }
 
   private String getServerUsername(JsonObject server) {
@@ -166,6 +162,10 @@ public class ConfigFactory {
 
   private String getFieldReplacement(JsonObject field) {
     return field.getString("replacement");
+  }
+
+  private String getMetricNamePrefix(JsonObject config) {
+    return config.getString("metricNamePrefix", "loggly.");
   }
 
   private Pattern compileRegex(JsonObject value) {
