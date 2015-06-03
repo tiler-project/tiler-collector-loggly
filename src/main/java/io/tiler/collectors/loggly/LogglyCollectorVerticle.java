@@ -202,7 +202,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           if (fieldConfig.hasReplacement() && (term instanceof String)) {
             Matcher matcher = fieldConfig.replacementRegex().matcher((String) term);
 
-            if (matcher.matches()) {
+            if (matcher.find()) {
               term = matcher.replaceAll(fieldConfig.replacement());
             }
           }
@@ -294,7 +294,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
             if (value instanceof String) {
               Matcher matcher = fieldConfig.expansionRegex().matcher((String) value);
 
-              if (matcher.matches()) {
+              if (matcher.find()) {
                 matcher.namedGroups().entrySet().forEach(group -> point.putString(group.getKey(), group.getValue()));
               }
             }
