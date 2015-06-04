@@ -8,6 +8,7 @@ import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
+import org.simondean.vertx.async.Async;
 import org.simondean.vertx.async.DefaultAsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
 import org.vertx.java.core.Handler;
@@ -37,9 +38,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
     final boolean[] isRunning = {true};
 
-    collect(aVoid -> {
-      isRunning[0] = false;
-    });
+    collect(result -> isRunning[0] = false);
 
     vertx.setPeriodic(config.collectionIntervalInMilliseconds(), timerID -> {
       if (isRunning[0]) {
@@ -49,9 +48,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
       isRunning[0] = true;
 
-      collect(aVoid -> {
-        isRunning[0] = false;
-      });
+      collect(aVoid -> isRunning[0] = false);
     });
 
     logger.info("LogglyCollectorVerticle started");
@@ -75,31 +72,23 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       .collect(Collectors.toList());
   }
 
-  private void collect(AsyncResultHandler<Void> handler) {
+  private void collect(Handler<Void> handler) {
     logger.info("Collection started");
-    getExistingMetrics(result -> {
-      if (result.failed()) {
-        handler.handle(DefaultAsyncResult.fail(result.cause()));
-        return;
-      }
-
-      JsonArray existingMetrics = result.result();
-
-      getMetrics(existingMetrics, result2 -> {
-        if (result2.failed()) {
-          handler.handle(DefaultAsyncResult.fail(result.cause()));
+    Async.waterfall()
+      .<JsonArray>task(taskHandler -> getExistingMetrics(taskHandler))
+      .<JsonArray>task((existingMetrics, taskHander) -> getMetrics(existingMetrics, taskHander))
+      .<JsonArray>task((servers, taskHandler) -> transformMetrics(servers, taskHandler))
+      .run(result -> {
+        if (result.failed()) {
+          logger.error("Failed to collect metrics", result.cause());
+          handler.handle(null);
           return;
         }
 
-        JsonArray servers = result2.result();
-
-        transformMetrics(servers, metrics -> {
-          saveMetrics(metrics);
-          logger.info("Collection finished");
-          handler.handle(null);
-        });
+        JsonArray metrics = result.result();
+        saveMetrics(metrics);
+        handler.handle(null);
       });
-    });
   }
 
   private void getExistingMetrics(AsyncResultHandler<JsonArray> handler) {
@@ -182,11 +171,24 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     logger.info("Request URI: '" + requestUri + "'");
 
     HttpClientRequest request = httpClients.get(state.serverIndex()).get(requestUri, response -> {
+      if (response.statusCode() != 200) {
+        handler.handle(DefaultAsyncResult.fail(new Exception("Unexpected " + response.statusCode() + "response code")));
+        return;
+      }
+
       response.bodyHandler(body -> {
+        String bodyString = body.toString();
+        JsonObject bodyJson;
+
+        try {
+          bodyJson = new JsonObject(bodyString);
+        } catch (Exception e) {
+          handler.handle(DefaultAsyncResult.fail(e));
+          return;
+        }
+
         Field fieldConfig = state.fieldConfig();
         String fieldName = fieldConfig.name();
-        String bodyString = body.toString();
-        JsonObject bodyJson = new JsonObject(bodyString);
 
         JsonArray items = bodyJson.getArray(fieldName);
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
@@ -259,7 +261,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     }
   }
 
-  private void transformMetrics(JsonArray servers, Handler<JsonArray> handler) {
+  private void transformMetrics(JsonArray servers, AsyncResultHandler<JsonArray> handler) {
     logger.info("Transforming metrics");
     JsonArray newMetrics = new JsonArray();
     long metricTimestamp = currentTimeInMicroseconds();
@@ -305,6 +307,6 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       }
     }
 
-    handler.handle(newMetrics);
+    handler.handle(DefaultAsyncResult.succeed(newMetrics));
   }
 }
