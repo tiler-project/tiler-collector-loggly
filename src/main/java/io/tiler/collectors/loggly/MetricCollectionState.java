@@ -344,4 +344,12 @@ public class MetricCollectionState {
   public boolean isLastField() {
     return (fieldIndex + 1) == fieldConfigs.size();
   }
+
+  public boolean isLastPoint() {
+    return (pointIndex + 1) == currentPoints.size();
+  }
+
+  public boolean isEndOfTimePeriod() {
+    return isLastField() && isLastPoint();
+  }
 }

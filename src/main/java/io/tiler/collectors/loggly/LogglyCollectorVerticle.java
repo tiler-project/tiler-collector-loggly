@@ -231,7 +231,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           state.addPoint(newPoint);
         });
 
-        if (state.isLastField()) {
+        if (state.isEndOfTimePeriod()) {
           JsonObject metric = state.metric();
           transformMetric(state.serverConfig(), state.metricConfig(), metric);
           saveMetrics(new JsonArray().add(metric));
