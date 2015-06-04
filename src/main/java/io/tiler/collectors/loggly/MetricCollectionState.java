@@ -59,6 +59,10 @@ public class MetricCollectionState {
     return serverConfig;
   }
 
+  public Metric metricConfig() {
+    return metricConfig;
+  }
+
   public Field fieldConfig() {
     return fieldConfig;
   }

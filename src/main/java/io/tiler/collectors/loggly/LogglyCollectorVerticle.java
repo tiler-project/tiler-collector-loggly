@@ -76,8 +76,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     logger.info("Collection started");
     Async.waterfall()
       .<JsonArray>task(taskHandler -> getExistingMetrics(taskHandler))
-      .<JsonArray>task((existingMetrics, taskHander) -> getMetrics(existingMetrics, taskHander))
-      .<JsonArray>task((servers, taskHandler) -> transformMetrics(servers, taskHandler))
+      .<JsonArray>task((existingMetrics, taskHandler) -> getMetrics(existingMetrics, taskHandler))
       .run(result -> {
         if (result.failed()) {
           logger.error("Failed to collect metrics", result.cause());
@@ -85,8 +84,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           return;
         }
 
-        JsonArray metrics = result.result();
-        saveMetrics(metrics);
+        logger.error("Collection succeeded");
         handler.handle(null);
       });
   }
@@ -106,7 +104,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
         while (pointIterator.hasNext()) {
           JsonObject point = pointIterator.next();
 
-          if (point.getBoolean("stable") == false) {
+          if (!point.getBoolean("stable")) {
             pointIterator.remove();
           }
         }
@@ -233,6 +231,12 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
           state.addPoint(newPoint);
         });
 
+        if (state.isLastField()) {
+          JsonObject metric = state.metric();
+          transformMetric(state.serverConfig(), state.metricConfig(), metric);
+          saveMetrics(new JsonArray().add(metric));
+        }
+
         getMetrics(state, handler);
       });
     });
@@ -261,52 +265,35 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     }
   }
 
-  private void transformMetrics(JsonArray servers, AsyncResultHandler<JsonArray> handler) {
-    logger.info("Transforming metrics");
-    JsonArray newMetrics = new JsonArray();
+  private void transformMetric(Server serverConfig, Metric metricConfig, JsonObject metric) {
+    logger.info("Transforming metric");
     long metricTimestamp = currentTimeInMicroseconds();
+    String serverName = serverConfig.name();
+    ArrayList<Field> fieldConfigsWithExpansionRegexs = new ArrayList<>();
 
-    for (int serverIndex = 0, serverCount = config.servers().size(); serverIndex < serverCount; serverIndex++) {
-      JsonObject server = servers.get(serverIndex);
-      Server serverConfig = config.servers().get(serverIndex);
-
-      String serverName = server.getString("name");
-
-      for (int metricIndex = 0, metricCount = serverConfig.metrics().size(); metricIndex < metricCount; metricIndex++) {
-        JsonObject metric = server.getArray("metrics").get(metricIndex);
-        Metric metricConfig = serverConfig.metrics().get(metricIndex);
-
-        ArrayList<Field> fieldConfigsWithExpansionRegexs = new ArrayList<>();
-
-        metricConfig.fields().forEach(fieldConfig -> {
-          if (fieldConfig.hasExpansion()) {
-            fieldConfigsWithExpansionRegexs.add(fieldConfig);
-          }
-        });
-
-        metric.putNumber("timestamp", metricTimestamp);
-
-        metric.getArray("points").forEach(pointObject -> {
-          JsonObject point = (JsonObject) pointObject;
-          point.putString("serverName", serverName);
-
-          fieldConfigsWithExpansionRegexs.forEach(fieldConfig -> {
-            Object value = point.getString(fieldConfig.name());
-
-            if (value instanceof String) {
-              Matcher matcher = fieldConfig.expansionRegex().matcher((String) value);
-
-              if (matcher.find()) {
-                matcher.namedGroups().entrySet().forEach(group -> point.putString(group.getKey(), group.getValue()));
-              }
-            }
-          });
-        });
-
-        newMetrics.add(metric);
+    metricConfig.fields().forEach(fieldConfig -> {
+      if (fieldConfig.hasExpansion()) {
+        fieldConfigsWithExpansionRegexs.add(fieldConfig);
       }
-    }
+    });
 
-    handler.handle(DefaultAsyncResult.succeed(newMetrics));
+    metric.putNumber("timestamp", metricTimestamp);
+
+    metric.getArray("points").forEach(pointObject -> {
+      JsonObject point = (JsonObject) pointObject;
+      point.putString("serverName", serverName);
+
+      fieldConfigsWithExpansionRegexs.forEach(fieldConfig -> {
+        Object value = point.getValue(fieldConfig.name());
+
+        if (value instanceof String) {
+          Matcher matcher = fieldConfig.expansionRegex().matcher((String) value);
+
+          if (matcher.find()) {
+            matcher.namedGroups().entrySet().forEach(group -> point.putString(group.getKey(), group.getValue()));
+          }
+        }
+      });
+    });
   }
 }
