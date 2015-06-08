@@ -137,6 +137,12 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       return;
     }
 
+    logger.info("Server " + (state.serverIndex() + 1) + " of " + state.serverCount() + ", " +
+      "metric " + (state.metricIndex() + 1) + " of " + state.metricCount() + ", " +
+      "time period " + (state.timePeriodIndex() + 1) + " of " + state.timerPeriodCount() + ", " +
+      "field " + (state.fieldIndex() + 1) + " of " + state.fieldCount() + ", " +
+      "point " + (state.pointIndex() + 1) + " of " + state.pointCount());
+
     String from = formatTimeInMicrosecondsAsISODateTime(state.startOfTimePeriodInMicroseconds());
     String until = formatTimeInMicrosecondsAsISODateTime(state.endOfTimePeriodInMicroseconds());
 
@@ -192,7 +198,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
 
         HashMap<Object, JsonObject> fieldNewPoints = new HashMap<>();
-        boolean timePeriodIsStable = state.timePeriodIsStable();
+        boolean isStableTimePeriod = state.isStableTimePeriod();
 
         items.forEach(itemObject -> {
           JsonObject item = (JsonObject) itemObject;
@@ -201,10 +207,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
           if (fieldConfig.hasReplacement() && (term instanceof String)) {
             Matcher matcher = fieldConfig.replacementRegex().matcher((String) term);
-
-            if (matcher.find()) {
-              term = matcher.replaceAll(fieldConfig.replacement());
-            }
+            term = matcher.replaceAll(fieldConfig.replacement());
           }
 
           JsonObject newPoint = fieldNewPoints.get(term);
@@ -224,14 +227,14 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         fieldNewPoints.values().forEach(newPoint -> {
           if (state.isLastField()) {
-            newPoint.putBoolean("stable", timePeriodIsStable)
+            newPoint.putBoolean("stable", isStableTimePeriod)
               .putNumber("time", state.startOfTimePeriodInMicroseconds());
           }
 
           state.addPoint(newPoint);
         });
 
-        if (state.isEndOfTimePeriod()) {
+        if (state.isEndOfTimePeriod() && (isStableTimePeriod || state.isLastTimePeriod())) {
           JsonObject metric = state.metric();
           transformMetric(state.serverConfig(), state.metricConfig(), metric);
           saveMetrics(new JsonArray().add(metric));

@@ -39,7 +39,7 @@ public class MetricCollectionState {
   private int timePeriodIndex;
   private int timePeriodCount;
   private long startOfLastStableTimePeriodInMilliseconds;
-  private boolean timePeriodIsStable;
+  private boolean isStableTimePeriod;
 
   public MetricCollectionState(Logger logger, Config config, long currentTimeInMicroseconds, JsonArray existingMetrics) {
     this.logger = logger;
@@ -112,8 +112,6 @@ public class MetricCollectionState {
   }
 
   private void startOfPointVisit() {
-    logger.info("Point " + pointIndex + " of " + currentPoints.size());
-
     point = currentPoints.get(pointIndex);
     totalFieldCount += 1;
   }
@@ -148,7 +146,6 @@ public class MetricCollectionState {
   }
 
   private void startOfFieldVisit() {
-    logger.info("Field " + fieldIndex + " of " + fieldConfigs.size());
     currentPoints = nextPoints;
     nextPoints = new JsonArray();
     pointIndex = 0;
@@ -184,12 +181,15 @@ public class MetricCollectionState {
   }
 
   private void startOfTimePeriodVisit() {
-    logger.info("Time period " + timePeriodIndex + " of " + timePeriodCount);
     nextPoints = new JsonArray();
     JsonObject emptyPoint = new JsonObject();
     nextPoints.addObject(emptyPoint);
 
-    timePeriodIsStable = startOfTimePeriodInMicroseconds <= startOfLastStableTimePeriodInMilliseconds;
+    isStableTimePeriod = startOfTimePeriodInMicroseconds <= startOfLastStableTimePeriodInMilliseconds;
+
+    if (isStableTimePeriod) {
+      metric.putNumber("endOfLastStableTimePeriod", startOfTimePeriodInMicroseconds + metricConfig.intervalInMicroseconds());
+    }
 
     fieldIndex = 0;
   }
@@ -231,7 +231,6 @@ public class MetricCollectionState {
   }
 
   private void startOfMetricVisit() {
-    logger.info("Metric " + metricIndex + " of " + metricConfigs.size());
     String metricName = config.getFullMetricName(metricConfig);
     metric = findMetricByNameInJsonArray(metricName, existingMetrics);
     long startOfLatestTimePeriodInMicroseconds = findStartOfPeriod(currentTimeInMicroseconds);
@@ -239,7 +238,7 @@ public class MetricCollectionState {
 
     if (metric != null) {
       applyRetentionPeriodToPoints(currentTimeInMicroseconds, metricConfig, metric);
-      startOfFirstTimePeriodInMicroseconds = findStartOfPeriod(metric.getLong("startOfLastStableTimePeriod"));
+      startOfFirstTimePeriodInMicroseconds = findStartOfPeriod(metric.getLong("endOfLastStableTimePeriod"));
     } else {
       metric = new JsonObject()
         .putString("name", metricName)
@@ -250,7 +249,6 @@ public class MetricCollectionState {
     timePeriodIndex = 0;
     timePeriodCount = (int) (((startOfLatestTimePeriodInMicroseconds - startOfFirstTimePeriodInMicroseconds) / metricConfig.intervalInMicroseconds()) + 1);
     startOfLastStableTimePeriodInMilliseconds = startOfLatestTimePeriodInMicroseconds - metricConfig.stabilityPeriodInMilliseconds() - metricConfig.intervalInMicroseconds();
-    metric.putNumber("startOfLastStableTimePeriod", startOfLastStableTimePeriodInMilliseconds);
 
     metrics.add(metric);
     startOfTimePeriodInMicroseconds = startOfFirstTimePeriodInMicroseconds;
@@ -286,7 +284,6 @@ public class MetricCollectionState {
   }
 
   private void startOfServerVisit() {
-    logger.info("Server " + serverIndex + " of " + serverConfigs.size());
     metrics = new JsonArray();
     servers.add(new JsonObject()
       .putString("name", serverConfig.name())
@@ -337,8 +334,12 @@ public class MetricCollectionState {
     return startOfTimePeriodInMicroseconds + metricConfig.intervalInMicroseconds();
   }
 
-  public boolean timePeriodIsStable() {
-    return timePeriodIsStable;
+  public boolean isStableTimePeriod() {
+    return isStableTimePeriod;
+  }
+
+  public boolean isLastTimePeriod() {
+    return (timePeriodIndex + 1) == timePeriodCount;
   }
 
   public boolean isLastField() {
@@ -351,5 +352,41 @@ public class MetricCollectionState {
 
   public boolean isEndOfTimePeriod() {
     return isLastField() && isLastPoint();
+  }
+
+  public int serverCount() {
+    return serverConfigs.size();
+  }
+
+  public int metricIndex() {
+    return metricIndex;
+  }
+
+  public int metricCount() {
+    return metricConfigs.size();
+  }
+
+  public int timePeriodIndex() {
+    return timePeriodIndex;
+  }
+
+  public int timerPeriodCount() {
+    return timePeriodCount;
+  }
+
+  public int fieldIndex() {
+    return fieldIndex;
+  }
+
+  public int fieldCount() {
+    return fieldConfigs.size();
+  }
+
+  public int pointIndex() {
+    return pointIndex;
+  }
+
+  public int pointCount() {
+    return currentPoints.size();
   }
 }
