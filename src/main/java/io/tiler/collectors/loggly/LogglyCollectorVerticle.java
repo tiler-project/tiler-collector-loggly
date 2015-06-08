@@ -174,27 +174,47 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     String requestUri = requestUriBuilder.toString();
     logger.info("Request URI: '" + requestUri + "'");
 
-    HttpClientRequest request = httpClients.get(state.serverIndex()).get(requestUri, response -> {
-      if (response.statusCode() != 200) {
-        handler.handle(DefaultAsyncResult.fail(new Exception("Unexpected " + response.statusCode() + "response code")));
-        return;
-      }
+    Async.retry()
+      .<JsonObject>task(taskHandler -> {
+        HttpClientRequest request = httpClients.get(state.serverIndex()).get(requestUri, response -> {
+          if (response.statusCode() != 200) {
+            taskHandler.handle(DefaultAsyncResult.fail(new Exception("Unexpected " + response.statusCode() + "response code")));
+            return;
+          }
 
-      response.bodyHandler(body -> {
-        String bodyString = body.toString();
-        JsonObject bodyJson;
+          response.bodyHandler(body -> {
+            String bodyString = body.toString();
+            JsonObject bodyJson;
 
-        try {
-          bodyJson = new JsonObject(bodyString);
-        } catch (Exception e) {
-          handler.handle(DefaultAsyncResult.fail(e));
+            try {
+              bodyJson = new JsonObject(bodyString);
+            } catch (Exception e) {
+              taskHandler.handle(DefaultAsyncResult.fail(e));
+              return;
+            }
+
+            taskHandler.handle(DefaultAsyncResult.succeed(bodyJson));
+          });
+        });
+
+        setBasicAuthOnRequest(serverConfig.username(), serverConfig.password(), request);
+        request.setTimeout(TWO_MINUTES_IN_MILLISECONDS);
+        request.exceptionHandler(cause -> taskHandler.handle(DefaultAsyncResult.fail(cause)));
+        request.end();
+      })
+      .times(state.metricConfig().retryTimes())
+      .run(result -> {
+        if (result.failed()) {
+          handler.handle(DefaultAsyncResult.fail(result));
           return;
         }
+
+        JsonObject body = result.result();
 
         Field fieldConfig = state.fieldConfig();
         String fieldName = fieldConfig.name();
 
-        JsonArray items = bodyJson.getArray(fieldName);
+        JsonArray items = body.getArray(fieldName);
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
 
         HashMap<Object, JsonObject> fieldNewPoints = new HashMap<>();
@@ -242,12 +262,6 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         getMetrics(state, handler);
       });
-    });
-
-    setBasicAuthOnRequest(serverConfig.username(), serverConfig.password(), request);
-    request.setTimeout(TWO_MINUTES_IN_MILLISECONDS);
-    request.exceptionHandler(cause -> handler.handle(DefaultAsyncResult.fail(cause)));
-    request.end();
   }
 
   private String formatTimeInMicrosecondsAsISODateTime(long timeInMicroseconds) {

@@ -12,9 +12,17 @@ public class Server {
   private final String password;
   private final List<Metric> metrics;
 
-  public Server(String name, String host, Integer port, String path, boolean ssl, String username, String password, List<Metric> metrics) {
+  public Server(String name, String host, Integer port, String path, Boolean ssl, String username, String password, List<Metric> metrics) {
+    if (host == null) {
+      host = "localhost";
+    }
+
     if (name == null) {
       name = host;
+    }
+
+    if (port == null) {
+      port = 9000;
     }
 
     if (path == null) {
@@ -22,6 +30,10 @@ public class Server {
     }
     else if (path.endsWith("/")) {
       path = path.substring(0, path.length() - 1);
+    }
+
+    if (ssl == null) {
+      ssl = true;
     }
 
     this.name = name;

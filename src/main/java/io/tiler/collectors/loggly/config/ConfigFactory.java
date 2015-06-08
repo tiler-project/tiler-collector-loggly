@@ -1,7 +1,6 @@
 package io.tiler.collectors.loggly.config;
 
 import com.google.code.regexp.Pattern;
-import io.tiler.core.time.TimePeriodParser;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
@@ -11,13 +10,9 @@ import java.util.List;
 public class ConfigFactory {
   public Config load(JsonObject config) {
     return new Config(
-      getCollectionIntervalInMilliseconds(config),
+      config.getString("collectionInterval"),
       getServers(config),
-      getMetricNamePrefix(config));
-  }
-
-  private long getCollectionIntervalInMilliseconds(JsonObject config) {
-    return TimePeriodParser.parseTimePeriodToMilliseconds(config.getString("collectionIntervalInMilliseconds", "1h"));
+      config.getString("metricNamePrefix"));
   }
 
   private List<Server> getServers(JsonObject config) {
@@ -38,42 +33,14 @@ public class ConfigFactory {
 
   private Server getServer(JsonObject server) {
     return new Server(
-      getServerName(server),
-      getServerHost(server),
-      getServerPort(server),
-      getServerPath(server),
-      getServerSsl(server),
-      getServerUsername(server),
-      getServerPassword(server),
+      server.getString("name"),
+      server.getString("host"),
+      server.getInteger("port"),
+      server.getString("path"),
+      server.getBoolean("ssl"),
+      server.getString("username"),
+      server.getString("password"),
       getServerMetrics(server));
-  }
-  
-  private String getServerName(JsonObject server) {
-    return server.getString("name");
-  }
-
-  private boolean getServerSsl(JsonObject server) {
-    return server.getBoolean("ssl", false);
-  }
-
-  private int getServerPort(JsonObject server) {
-    return server.getInteger("port", 9000);
-  }
-
-  private String getServerPath(JsonObject server) {
-    return server.getString("path", "");
-  }
-
-  private String getServerHost(JsonObject server) {
-    return server.getString("host", "localhost");
-  }
-
-  private String getServerUsername(JsonObject server) {
-    return server.getString("username");
-  }
-
-  private String getServerPassword(JsonObject server) {
-    return server.getString("password");
   }
 
   private List<Metric> getServerMetrics(JsonObject server) {
@@ -94,32 +61,13 @@ public class ConfigFactory {
 
   private Metric getMetric(JsonObject metric) {
     return new Metric(
-      getMetricName(metric),
-      getMetricInterval(metric),
-      getMetricRetentionPeriod(metric),
-      getMetricMaxCatchUpPeriod(metric),
-      getMetricStabilityPeriod(metric),
+      metric.getString("name"),
+      metric.getString("interval"),
+      metric.getString("retentionPeriod"),
+      metric.getString("maxCatchUpPeriod"),
+      metric.getString("stabilityPeriod"),
+      metric.getInteger("retryTimes"),
       getMetricFields(metric));
-  }
-
-  private String getMetricName(JsonObject metric) {
-    return metric.getString("name");
-  }
-
-  private String getMetricInterval(JsonObject metric) {
-    return metric.getString("interval", "1h");
-  }
-
-  private String getMetricRetentionPeriod(JsonObject metric) {
-    return metric.getString("retentionPeriod", "1d");
-  }
-
-  private String getMetricMaxCatchUpPeriod(JsonObject metric) {
-    return metric.getString("maxCatchUpPeriod", "1d");
-  }
-
-  private String getMetricStabilityPeriod(JsonObject metric) {
-    return metric.getString("stabilityPeriod", "1h");
   }
 
   private List<Field> getMetricFields(JsonObject metric) {
@@ -142,30 +90,10 @@ public class ConfigFactory {
     
     JsonObject field = (JsonObject) fieldObject;
     return new Field(
-      getFieldName(field),
-      getFieldExpansionRegex(field),
-      getFieldReplacementRegex(field),
-      getFieldReplacement(field));
-  }
-
-  private String getFieldName(JsonObject field) {
-    return field.getString("name");
-  }
-
-  private Pattern getFieldExpansionRegex(JsonObject field) {
-    return compileRegex(field.getObject("expansionRegex"));
-  }
-
-  private Pattern getFieldReplacementRegex(JsonObject field) {
-    return compileRegex(field.getObject("replacementRegex"));
-  }
-
-  private String getFieldReplacement(JsonObject field) {
-    return field.getString("replacement");
-  }
-
-  private String getMetricNamePrefix(JsonObject config) {
-    return config.getString("metricNamePrefix", "loggly.");
+      field.getString("name"),
+      compileRegex(field.getObject("expansionRegex")),
+      compileRegex(field.getObject("replacementRegex")),
+      field.getString("replacement"));
   }
 
   private Pattern compileRegex(JsonObject value) {

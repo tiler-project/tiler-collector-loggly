@@ -9,15 +9,37 @@ public class Metric {
   private final long intervalInMicroseconds;
   private final long retentionPeriodInMicroseconds;
   private final long maxCatchUpPeriodInMicroseconds;
-  private long stabilityPeriodInMilliseconds;
+  private final long stabilityPeriodInMilliseconds;
+  private final int retryTimes;
   private final List<Field> fields;
 
-  public Metric(String name, String interval, String retentionPeriod, String maxCatchUpPeriod, String stabilityPeriod, List<Field> fields) {
+  public Metric(String name, String interval, String retentionPeriod, String maxCatchUpPeriod, String stabilityPeriod, Integer retryTimes, List<Field> fields) {
+    if (interval == null) {
+      interval = "1h";
+    }
+
+    if (retentionPeriod == null) {
+      retentionPeriod = "1d";
+    }
+
+    if (maxCatchUpPeriod == null) {
+      maxCatchUpPeriod = "1d";
+    }
+
+    if (stabilityPeriod == null) {
+      stabilityPeriod = "1h";
+    }
+
+    if (retryTimes == null) {
+      retryTimes = 3;
+    }
+
     this.name = name;
     this.intervalInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(interval);
     this.retentionPeriodInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(retentionPeriod);
     this.maxCatchUpPeriodInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(maxCatchUpPeriod);
     this.stabilityPeriodInMilliseconds = TimePeriodParser.parseTimePeriodToMicroseconds(stabilityPeriod);
+    this.retryTimes = retryTimes;
     this.fields = fields;
   }
 
@@ -39,6 +61,10 @@ public class Metric {
 
   public long stabilityPeriodInMilliseconds() {
     return stabilityPeriodInMilliseconds;
+  }
+
+  public int retryTimes() {
+    return retryTimes;
   }
 
   public List<Field> fields() {
