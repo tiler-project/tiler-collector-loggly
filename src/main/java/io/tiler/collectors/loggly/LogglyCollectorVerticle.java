@@ -154,21 +154,11 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       .append("/?from=" + urlEncode(from) + "&until=" + urlEncode(until) + "&facet_size=2000");
 
     JsonObject point = state.point();
+    String query = getLogglyQuery(state.metricConfig(), point);
 
-    if (point.size() > 0) {
-      requestUriBuilder.append("&q=");
-
-      String separator = "";
-
-      for (String fieldName : point.getFieldNames()) {
-        if (!fieldName.equals("count")) {
-          requestUriBuilder.append(urlEncode(separator))
-            .append(urlEncode(fieldName))
-            .append(":")
-            .append(urlEncode(point.getField(fieldName).toString()));
-          separator = " ";
-        }
-      }
+    if (query.length() > 0) {
+      requestUriBuilder.append("&q=")
+        .append(query);
     }
 
     String requestUri = requestUriBuilder.toString();
@@ -262,6 +252,22 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         getMetrics(state, handler);
       });
+  }
+
+  private String getLogglyQuery(Metric metricConfig, JsonObject point) {
+    ArrayList<String> queryParts = new ArrayList<>();
+
+    if (metricConfig.hasQuery()) {
+      queryParts.add(urlEncode(metricConfig.query()));
+    }
+
+    for (String fieldName : point.getFieldNames()) {
+      if (!fieldName.equals("count")) {
+        queryParts.add(fieldName + ":" + point.getField(fieldName).toString());
+      }
+    }
+
+    return urlEncode(String.join(" ", queryParts));
   }
 
   private String formatTimeInMicrosecondsAsISODateTime(long timeInMicroseconds) {

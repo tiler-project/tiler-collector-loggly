@@ -67,6 +67,7 @@ public class ConfigFactory {
       metric.getString("maxCatchUpPeriod"),
       metric.getString("stabilityPeriod"),
       metric.getInteger("retryTimes"),
+      metric.getString("query"),
       getMetricFields(metric));
   }
 
