@@ -258,7 +258,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     ArrayList<String> queryParts = new ArrayList<>();
 
     if (metricConfig.hasQuery()) {
-      queryParts.add(urlEncode(metricConfig.query()));
+      queryParts.add(metricConfig.query());
     }
 
     for (String fieldName : point.getFieldNames()) {
