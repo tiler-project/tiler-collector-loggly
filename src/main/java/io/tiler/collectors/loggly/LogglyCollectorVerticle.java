@@ -36,19 +36,20 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     config = new ConfigFactory().load(container.config());
     httpClients = createHttpClients();
 
-    final boolean[] isRunning = {true};
+    final RunState runState = new RunState();
+    runState.start();
 
-    collect(result -> isRunning[0] = false);
+    collect(result -> runState.stop());
 
     vertx.setPeriodic(config.collectionIntervalInMilliseconds(), timerID -> {
-      if (isRunning[0]) {
+      if (runState.isRunning() && !runState.hasTimedOut()) {
         logger.warn("Collection aborted as previous run still executing");
         return;
       }
 
-      isRunning[0] = true;
+      runState.start();
 
-      collect(aVoid -> isRunning[0] = false);
+      collect(aVoid -> runState.stop());
     });
 
     logger.info("LogglyCollectorVerticle started");
@@ -74,60 +75,20 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
   private void collect(Handler<Void> handler) {
     logger.info("Collection started");
-    Async.waterfall()
-      .<JsonArray>task(taskHandler -> getExistingMetrics(taskHandler))
-      .<JsonArray>task((existingMetrics, taskHandler) -> getMetrics(existingMetrics, taskHandler))
-      .run(result -> {
-        if (result.failed()) {
-          logger.error("Failed to collect metrics", result.cause());
-          handler.handle(null);
-          return;
-        }
-
-        logger.error("Collection succeeded");
-        handler.handle(null);
-      });
-  }
-
-  private void getExistingMetrics(AsyncResultHandler<JsonArray> handler) {
-    getExistingMetrics(getMetricNames(), result -> {
+    getMetrics(result -> {
       if (result.failed()) {
-        handler.handle(result);
+        logger.error("Failed to collect metrics", result.cause());
+        handler.handle(null);
         return;
       }
 
-      JsonArray existingMetrics = result.result();
-
-      for (JsonObject metric : new JsonArrayIterable<JsonObject>(existingMetrics)) {
-        Iterator<JsonObject> pointIterator = new JsonArrayIterable<JsonObject>(metric.getArray("points")).iterator();
-
-        while (pointIterator.hasNext()) {
-          JsonObject point = pointIterator.next();
-
-          if (!point.getBoolean("stable")) {
-            pointIterator.remove();
-          }
-        }
-      }
-
-      handler.handle(DefaultAsyncResult.succeed(existingMetrics));
+      logger.info("Collection succeeded");
+      handler.handle(null);
     });
   }
 
-  private List<String> getMetricNames() {
-    ArrayList<String> metricNames = new ArrayList<>();
-
-    config.servers().forEach(serverConfig -> {
-      serverConfig.metrics().forEach(metricConfig -> {
-        metricNames.add(config.getFullMetricName(metricConfig));
-      });
-    });
-
-    return metricNames;
-  }
-
-  private void getMetrics(JsonArray existingMetrics, AsyncResultHandler<JsonArray> handler) {
-    getMetrics(new MetricCollectionState(logger, config, currentTimeInMicroseconds(), existingMetrics), handler);
+  private void getMetrics(AsyncResultHandler<JsonArray> handler) {
+    getMetrics(new MetricCollectionState(logger, config, currentTimeInMicroseconds()), handler);
   }
 
   private void getMetrics(MetricCollectionState state, AsyncResultHandler<JsonArray> handler) {
@@ -139,19 +100,17 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
     logger.info("Server " + (state.serverIndex() + 1) + " of " + state.serverCount() + ", " +
       "metric " + (state.metricIndex() + 1) + " of " + state.metricCount() + ", " +
-      "time period " + (state.timePeriodIndex() + 1) + " of " + state.timerPeriodCount() + ", " +
       "field " + (state.fieldIndex() + 1) + " of " + state.fieldCount() + ", " +
       "point " + (state.pointIndex() + 1) + " of " + state.pointCount());
 
-    String from = formatTimeInMicrosecondsAsISODateTime(state.startOfTimePeriodInMicroseconds());
-    String until = formatTimeInMicrosecondsAsISODateTime(state.endOfTimePeriodInMicroseconds());
+    String from = formatTimeInMicrosecondsAsISODateTime(state.fromTimeInMicroseconds());
 
     Server serverConfig = state.serverConfig();
     StringBuilder requestUriBuilder = new StringBuilder()
       .append(serverConfig.path())
       .append("/apiv2/fields/")
       .append(urlEncode(state.fieldConfig().name()))
-      .append("/?from=" + urlEncode(from) + "&until=" + urlEncode(until) + "&facet_size=2000");
+      .append("/?from=" + urlEncode(from) + "&facet_size=2000");
 
     JsonObject point = state.point();
     String query = getLogglyQuery(state.metricConfig(), point);
@@ -208,7 +167,6 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
         logger.info("Received " + items.size() + " terms for field '" + fieldName + "'");
 
         HashMap<Object, JsonObject> fieldNewPoints = new HashMap<>();
-        boolean isStableTimePeriod = state.isStableTimePeriod();
 
         items.forEach(itemObject -> {
           JsonObject item = (JsonObject) itemObject;
@@ -237,14 +195,13 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
         fieldNewPoints.values().forEach(newPoint -> {
           if (state.isLastField()) {
-            newPoint.putBoolean("stable", isStableTimePeriod)
-              .putNumber("time", state.startOfTimePeriodInMicroseconds());
+            newPoint.putNumber("fromTime", state.fromTimeInMicroseconds());
           }
 
           state.addPoint(newPoint);
         });
 
-        if (state.isEndOfTimePeriod() && (isStableTimePeriod || state.isLastTimePeriod())) {
+        if (state.isEndOfMetric()) {
           JsonObject metric = state.metric();
           transformMetric(state.serverConfig(), state.metricConfig(), metric);
           saveMetrics(new JsonArray().add(metric));

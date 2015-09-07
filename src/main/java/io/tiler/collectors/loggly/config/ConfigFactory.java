@@ -62,10 +62,7 @@ public class ConfigFactory {
   private Metric getMetric(JsonObject metric) {
     return new Metric(
       metric.getString("name"),
-      metric.getString("interval"),
-      metric.getString("retentionPeriod"),
-      metric.getString("maxCatchUpPeriod"),
-      metric.getString("stabilityPeriod"),
+      metric.getString("timePeriod"),
       metric.getInteger("retryTimes"),
       metric.getString("query"),
       getMetricFields(metric));

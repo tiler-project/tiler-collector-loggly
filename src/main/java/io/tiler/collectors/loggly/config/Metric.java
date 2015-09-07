@@ -6,29 +6,14 @@ import java.util.List;
 
 public class Metric {
   private final String name;
-  private final long intervalInMicroseconds;
-  private final long retentionPeriodInMicroseconds;
-  private final long maxCatchUpPeriodInMicroseconds;
-  private final long stabilityPeriodInMilliseconds;
+  private final long timePeriodInMicroseconds;
   private final int retryTimes;
   private final String query;
   private final List<Field> fields;
 
-  public Metric(String name, String interval, String retentionPeriod, String maxCatchUpPeriod, String stabilityPeriod, Integer retryTimes, String query, List<Field> fields) {
-    if (interval == null) {
-      interval = "1h";
-    }
-
-    if (retentionPeriod == null) {
-      retentionPeriod = "1d";
-    }
-
-    if (maxCatchUpPeriod == null) {
-      maxCatchUpPeriod = "1d";
-    }
-
-    if (stabilityPeriod == null) {
-      stabilityPeriod = "1h";
+  public Metric(String name, String timePeriod, Integer retryTimes, String query, List<Field> fields) {
+    if (timePeriod == null) {
+      timePeriod = "1d";
     }
 
     if (retryTimes == null) {
@@ -36,10 +21,7 @@ public class Metric {
     }
 
     this.name = name;
-    this.intervalInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(interval);
-    this.retentionPeriodInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(retentionPeriod);
-    this.maxCatchUpPeriodInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(maxCatchUpPeriod);
-    this.stabilityPeriodInMilliseconds = TimePeriodParser.parseTimePeriodToMicroseconds(stabilityPeriod);
+    this.timePeriodInMicroseconds = TimePeriodParser.parseTimePeriodToMicroseconds(timePeriod);
     this.retryTimes = retryTimes;
     this.query = query;
     this.fields = fields;
@@ -49,20 +31,8 @@ public class Metric {
     return name;
   }
 
-  public long intervalInMicroseconds() {
-    return intervalInMicroseconds;
-  }
-
-  public long retentionPeriodInMicroseconds() {
-    return retentionPeriodInMicroseconds;
-  }
-
-  public long maxCatchUpPeriodInMicroseconds() {
-    return maxCatchUpPeriodInMicroseconds;
-  }
-
-  public long stabilityPeriodInMilliseconds() {
-    return stabilityPeriodInMilliseconds;
+  public long timePeriodInMicroseconds() {
+    return timePeriodInMicroseconds;
   }
 
   public int retryTimes() {
