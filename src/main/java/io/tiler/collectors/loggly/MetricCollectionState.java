@@ -5,6 +5,8 @@ import io.tiler.collectors.loggly.config.Field;
 import io.tiler.collectors.loggly.config.Metric;
 import io.tiler.collectors.loggly.config.Server;
 import io.tiler.core.json.JsonArrayIterable;
+import org.vertx.java.core.Vertx;
+import org.vertx.java.core.http.HttpClient;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.logging.Logger;
@@ -13,6 +15,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class MetricCollectionState {
+  private final Vertx vertx;
   private final Logger logger;
   private final Config config;
   private final long currentTimeInMicroseconds;
@@ -35,8 +38,10 @@ public class MetricCollectionState {
   private int fieldIndex;
   private int pointIndex;
   private long fromTimeInMicroseconds;
+  private HttpClient httpClient;
 
-  public MetricCollectionState(Logger logger, Config config, long currentTimeInMicroseconds) {
+  public MetricCollectionState(Vertx vertx, Logger logger, Config config, long currentTimeInMicroseconds) {
+    this.vertx = vertx;
     this.logger = logger;
     this.config = config;
     this.currentTimeInMicroseconds = currentTimeInMicroseconds;
@@ -223,6 +228,16 @@ public class MetricCollectionState {
   }
 
   private void startOfServerVisit() {
+    httpClient = vertx.createHttpClient()
+      .setHost(serverConfig.host())
+      .setPort(serverConfig.port())
+      .setSSL(serverConfig.ssl())
+      .setTryUseCompression(true);
+    // Get the following error without turning keep alive off.  Looks like a vertx bug
+    // SEVERE: Exception in Java verticle
+    // java.nio.channels.ClosedChannelException
+    httpClient.setKeepAlive(false);
+
     metrics = new JsonArray();
     servers.add(new JsonObject()
       .putString("name", serverConfig.name())
@@ -231,6 +246,14 @@ public class MetricCollectionState {
   }
 
   private void endOfServerVisit() {
+    httpClient.close();
+    httpClient = null;
+  }
+
+  public void dispose() {
+    if (httpClient != null) {
+      httpClient.close();
+    }
   }
 
   public void addPoint(JsonObject point) {
@@ -239,6 +262,10 @@ public class MetricCollectionState {
 
   public long fromTimeInMicroseconds() {
     return fromTimeInMicroseconds;
+  }
+
+  public HttpClient httpClient() {
+    return httpClient;
   }
 
   public boolean isLastField() {

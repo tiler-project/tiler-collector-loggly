@@ -1,9 +1,8 @@
 package io.tiler.collectors.loggly;
 
 import com.google.code.regexp.Matcher;
-import io.tiler.core.BaseCollectorVerticle;
 import io.tiler.collectors.loggly.config.*;
-import io.tiler.core.json.JsonArrayIterable;
+import io.tiler.core.BaseCollectorVerticle;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormatter;
@@ -12,7 +11,6 @@ import org.simondean.vertx.async.Async;
 import org.simondean.vertx.async.DefaultAsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
 import org.vertx.java.core.Handler;
-import org.vertx.java.core.http.HttpClient;
 import org.vertx.java.core.http.HttpClientRequest;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
@@ -20,21 +18,20 @@ import org.vertx.java.core.logging.Logger;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
 
 public class LogglyCollectorVerticle extends BaseCollectorVerticle {
   private static final long TWO_MINUTES_IN_MILLISECONDS = 2 * 60 * 1000;
   private Logger logger;
   private Config config;
-  private List<HttpClient> httpClients;
   private Base64.Encoder base64Encoder = Base64.getEncoder();
   private DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime().withZoneUTC();
 
   public void start() {
     logger = container.logger();
     config = new ConfigFactory().load(container.config());
-    httpClients = createHttpClients();
 
     final RunState runState = new RunState();
     runState.start();
@@ -55,24 +52,6 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
     logger.info("LogglyCollectorVerticle started");
   }
 
-  private List<HttpClient> createHttpClients() {
-    return config.servers()
-      .stream()
-      .map(server -> {
-        HttpClient httpClient = vertx.createHttpClient()
-          .setHost(server.host())
-          .setPort(server.port())
-          .setSSL(server.ssl())
-          .setTryUseCompression(true);
-        // Get the following error without turning keep alive off.  Looks like a vertx bug
-        // SEVERE: Exception in Java verticle
-        // java.nio.channels.ClosedChannelException
-        httpClient.setKeepAlive(false);
-        return httpClient;
-      })
-      .collect(Collectors.toList());
-  }
-
   private void collect(Handler<Void> handler) {
     logger.info("Collection started");
     getMetrics(result -> {
@@ -88,7 +67,15 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
   }
 
   private void getMetrics(AsyncResultHandler<JsonArray> handler) {
-    getMetrics(new MetricCollectionState(logger, config, currentTimeInMicroseconds()), handler);
+    MetricCollectionState state = new MetricCollectionState(vertx, logger, config, currentTimeInMicroseconds());
+
+    getMetrics(
+      state,
+      result -> {
+        state.dispose();
+
+        handler.handle(result);
+      });
   }
 
   private void getMetrics(MetricCollectionState state, AsyncResultHandler<JsonArray> handler) {
@@ -110,7 +97,9 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
       .append(serverConfig.path())
       .append("/apiv2/fields/")
       .append(urlEncode(state.fieldConfig().name()))
-      .append("/?from=" + urlEncode(from) + "&facet_size=2000");
+      .append("/?from=")
+      .append(urlEncode(from))
+      .append("&facet_size=2000");
 
     JsonObject point = state.point();
     String query = getLogglyQuery(state.metricConfig(), point);
@@ -125,7 +114,7 @@ public class LogglyCollectorVerticle extends BaseCollectorVerticle {
 
     Async.retry()
       .<JsonObject>task(taskHandler -> {
-        HttpClientRequest request = httpClients.get(state.serverIndex()).get(requestUri, response -> {
+        HttpClientRequest request = state.httpClient().get(requestUri, response -> {
           if (response.statusCode() != 200) {
             taskHandler.handle(DefaultAsyncResult.fail(new Exception("Unexpected " + response.statusCode() + "response code")));
             return;
